@@ -1574,9 +1574,6 @@ logSet = function() {
   _originalLogSet();
   if (workoutActive && data.history.length > prevLen) {
     workoutSets.push(data.history[data.history.length - 1]);
-    if (supersetJustLogged === null) {
-      workoutIndex++;
-    }
     setTimeout(() => { if (currentTab === 'workout') renderWorkout(); }, 300);
   }
 };
