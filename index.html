@@ -1195,11 +1195,24 @@ function getTrend(entries) {
 function groupByDate(entries) {
   const g = {};
   entries.forEach(e => {
-    const k = new Date(e.date).toLocaleDateString();
+    // Use YYYY-MM-DD as key for reliable sorting
+    const k = new Date(e.date).toISOString().slice(0, 10);
     if (!g[k]) g[k] = [];
     g[k].push(e);
   });
-  return Object.entries(g).sort((a, b) => new Date(b[0]) - new Date(a[0]));
+  // Sort most recent first, then map key to a friendly label
+  return Object.entries(g)
+    .sort((a, b) => b[0].localeCompare(a[0]))
+    .map(([k, sets]) => {
+      const d = new Date(k + 'T12:00:00'); // noon to avoid timezone flipping the day
+      const today = new Date();
+      const yesterday = new Date(); yesterday.setDate(today.getDate() - 1);
+      let label;
+      if (k === today.toISOString().slice(0, 10)) label = 'Today';
+      else if (k === yesterday.toISOString().slice(0, 10)) label = 'Yesterday';
+      else label = d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
+      return [label, sets];
+    });
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -1519,10 +1532,18 @@ function renderWorkout() {
   });
   filterHTML += '</div>';
 
-  // END WORKOUT button — only show when a day is active
-  if (activeDay) {
-    filterHTML += `<button class="btn-danger" style="width:100%;margin-bottom:16px;padding:14px;font-size:13px;font-weight:800;letter-spacing:1px" onclick="activeDay=null;renderWorkout()">END WORKOUT</button>`;
+  // No day selected — show prompt, hide exercise list
+  if (!activeDay) {
+    el.innerHTML = filterHTML + `<div style="text-align:center;padding:60px 20px;color:var(--text-dim)">
+      <div style="font-size:40px;margin-bottom:16px">💪</div>
+      <div style="font-size:18px;font-weight:800;color:var(--text);margin-bottom:8px">Ready to train?</div>
+      <div style="font-size:13px">Select a workout above to get started</div>
+    </div>`;
+    return;
   }
+
+  // END WORKOUT button — only show when a day is active
+  filterHTML += `<button class="btn-danger" style="width:100%;margin-bottom:16px;padding:14px;font-size:13px;font-weight:800;letter-spacing:1px" onclick="activeDay=null;switchTab('progress')">END WORKOUT</button>`;
 
   const filteredExercises = activeDay && DAY_EXERCISES[activeDay]
     ? data.exercises.filter(ex => DAY_EXERCISES[activeDay].some(de => de.toLowerCase() === ex.toLowerCase()))
@@ -1643,6 +1664,7 @@ logSet = function() {
     data.history.push({ id: genId(), exercise: currentExercise, weight: w, reps: r, date: new Date().toISOString() });
   }
   saveData(data);
+  console.log('IronLog logSet: data.history.length =', data.history.length, 'exercise =', currentExercise);
   closeModal('log');
 
   const partner = getSupersetPartner(currentExercise);
@@ -1669,11 +1691,15 @@ function renderProgress() {
     el.innerHTML = `<div class="empty"><div class="empty-icon">📈</div><p class="empty-title">No exercises yet</p><p class="empty-sub">Add exercises and log sets to see progress</p></div>`;
     return;
   }
-  let html = `<h2 style="font-size:20px;font-weight:800;margin-bottom:16px">Progress</h2>
-    <select class="superset-select progress-exercise-select" id="progress-select" onchange="renderProgress()">${data.exercises.map(ex => `<option ${currentExercise === ex ? 'selected' : ''}>${ex}</option>`).join('')}</select>`;
-
-  const selEx = document.getElementById('progress-select')?.value || data.exercises[0];
+  // Determine exercise BEFORE building HTML so the select's selected
+  // option matches the data we query (DOM element may not exist yet on first render)
+  const prevSelect = document.getElementById('progress-select');
+  const selEx = prevSelect?.value
+    || (currentExercise && data.exercises.some(e => e.toLowerCase() === currentExercise.toLowerCase()) ? currentExercise : data.exercises[0]);
   currentExercise = selEx;
+
+  let html = `<h2 style="font-size:20px;font-weight:800;margin-bottom:16px">Progress</h2>
+    <select class="superset-select progress-exercise-select" id="progress-select" onchange="renderProgress()">${data.exercises.map(ex => `<option ${selEx.toLowerCase() === ex.toLowerCase() ? 'selected' : ''}>${ex}</option>`).join('')}</select>`;
   const entries = data.history.filter(h => h.exercise === selEx).sort((a, b) => new Date(a.date) - new Date(b.date));
   if (!entries.length) {
     html += `<p style="color:var(--text-muted);text-align:center;padding:20px">No data for ${selEx} yet</p>`;
